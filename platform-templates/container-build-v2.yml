@@ -104,6 +104,10 @@ stages:
               tenantName: ${{ parameters.tenantName }}
               appName: ${{ parameters.appName }}
               dryRun: ${{ parameters.dryRun }}
+              acrHost: $(stageDependencies.Setup.Setup.outputs['resolveTools.ACR_HOST'])
+              imageDigest: $(stageDependencies.Build.Build.outputs['buildImage.IMAGE_DIGEST'])
+              syftVersion: $(stageDependencies.Setup.Setup.outputs['resolveTools.SYFT_VERSION'])
+              cosignVersion: $(stageDependencies.Setup.Setup.outputs['resolveTools.COSIGN_VERSION'])
 
   - stage: Publish
     displayName: 'Publish'

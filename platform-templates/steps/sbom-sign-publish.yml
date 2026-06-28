@@ -12,8 +12,124 @@ parameters:
   - name: dryRun
     type: boolean
     default: false
+  - name: acrHost
+    type: string
+    default: ''
+  - name: imageDigest
+    type: string
+    default: ''
+  - name: syftVersion
+    type: string
+    default: ''
+  - name: cosignVersion
+    type: string
+    default: ''
 
 steps:
-  - bash: |
-      echo "STUB: sbom-sign-publish.yml not yet implemented (phase=${{ parameters.phase }})"
-    displayName: 'STUB: SBOM Sign Publish — ${{ parameters.phase }} (Phases 7-8)'
+
+  # ── signAndAttest phase ──────────────────────────────────────────────────
+
+  - ${{ if eq(parameters.phase, 'signAndAttest') }}:
+    - bash: |
+        curl -sSfL \
+          "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz" \
+          | tar -xz -C /tmp syft
+        chmod +x /tmp/syft
+        /tmp/syft version
+      displayName: 'Download Syft'
+      env:
+        SYFT_VERSION: ${{ parameters.syftVersion }}
+
+    - bash: |
+        curl -sSfL \
+          "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-amd64" \
+          -o /tmp/cosign
+        chmod +x /tmp/cosign
+        /tmp/cosign version
+      displayName: 'Download Cosign'
+      env:
+        COSIGN_VERSION: ${{ parameters.cosignVersion }}
+
+    - task: AzureKeyVault@2
+      displayName: 'Retrieve Cosign Keys from AKV'
+      inputs:
+        azureSubscription: $(COSIGN_AKV_SERVICE_CONNECTION)
+        KeyVaultName: $(COSIGN_KEY_VAULT_NAME)
+        SecretsFilter: 'cosign-private-key,cosign-public-key'
+        RunAsPreJob: false
+
+    - bash: |
+        LOCAL_IMAGE_REF="$TENANT_NAME/$APP_NAME:pipeline-$BUILD_BUILDID"
+        /tmp/syft "$LOCAL_IMAGE_REF" -o "cyclonedx-json=$(System.DefaultWorkingDirectory)/sbom.cdx.json"
+        echo "SBOM generated at sbom.cdx.json"
+      name: generateSbom
+      displayName: 'Generate CycloneDX SBOM with Syft'
+      env:
+        TENANT_NAME: ${{ parameters.tenantName }}
+        APP_NAME: ${{ parameters.appName }}
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish SBOM as Pipeline Artifact'
+      inputs:
+        targetPath: '$(System.DefaultWorkingDirectory)/sbom.cdx.json'
+        artifact: 'sbom-${{ parameters.tenantName }}-${{ parameters.appName }}'
+        publishLocation: 'pipeline'
+
+    - bash: |
+        set -euo pipefail
+        trap 'rm -f /tmp/cosign.key /tmp/cosign.pub' EXIT
+
+        # Write keys from AKV-provided pipeline variables
+        echo "$COSIGN_PRIVATE_KEY_SECRET" > /tmp/cosign.key
+        echo "$COSIGN_PUBLIC_KEY_SECRET" > /tmp/cosign.pub
+
+        # Tag and push image to ACR under short SHA tag
+        SHORT_SHA="${BUILD_SOURCEVERSION:0:12}"
+        ACR_IMAGE_REF="$ACR_HOST/$TENANT_NAME/$APP_NAME"
+        LOCAL_IMAGE_REF="$TENANT_NAME/$APP_NAME:pipeline-$BUILD_BUILDID"
+
+        docker tag "$LOCAL_IMAGE_REF" "$ACR_IMAGE_REF:$SHORT_SHA"
+        docker push "$ACR_IMAGE_REF:$SHORT_SHA"
+
+        # Capture manifest digest from ACR push
+        MANIFEST_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$ACR_IMAGE_REF:$SHORT_SHA" \
+          | grep -oP 'sha256:[a-f0-9]+')
+        echo "Manifest digest: $MANIFEST_DIGEST"
+
+        # Sign the manifest digest
+        /tmp/cosign sign --key /tmp/cosign.key "$ACR_IMAGE_REF@$MANIFEST_DIGEST"
+
+        # Attach SBOM as OCI attestation
+        /tmp/cosign attest \
+          --key /tmp/cosign.key \
+          --predicate "$(System.DefaultWorkingDirectory)/sbom.cdx.json" \
+          --type cyclonedx \
+          "$ACR_IMAGE_REF@$MANIFEST_DIGEST"
+
+        # Verify signature immediately
+        /tmp/cosign verify --key /tmp/cosign.pub "$ACR_IMAGE_REF@$MANIFEST_DIGEST"
+        echo "Cosign signature verified successfully."
+
+        echo "##vso[task.setvariable variable=MANIFEST_DIGEST;isOutput=true]$MANIFEST_DIGEST"
+      name: signAttest
+      displayName: 'Push to ACR, Sign, Attest, and Verify'
+      env:
+        ACR_HOST: ${{ parameters.acrHost }}
+        TENANT_NAME: ${{ parameters.tenantName }}
+        APP_NAME: ${{ parameters.appName }}
+        COSIGN_PRIVATE_KEY_SECRET: $(cosign-private-key)
+        COSIGN_PUBLIC_KEY_SECRET: $(cosign-public-key)
+
+  # ── publish phase (Phase 8 stub) ─────────────────────────────────────────
+
+  - ${{ if eq(parameters.phase, 'publish') }}:
+    - bash: |
+        echo "STUB: sbom-sign-publish.yml publish phase not yet implemented"
+      displayName: 'STUB: Publish (Phase 8)'
+
+  # ── notify phase (Phase 8 stub) ──────────────────────────────────────────
+
+  - ${{ if eq(parameters.phase, 'notify') }}:
+    - bash: |
+        echo "STUB: sbom-sign-publish.yml notify phase not yet implemented"
+      displayName: 'STUB: Notify (Phase 8)'
