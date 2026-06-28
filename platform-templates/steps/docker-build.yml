@@ -11,6 +11,8 @@ parameters:
     default: '.'
   - name: acrHost
     type: string
+  - name: npmRegistryUrl
+    type: string
 
 steps:
   - bash: |
@@ -30,6 +32,8 @@ steps:
         --iidfile "$IIDFILE" \
         -t "$LOCAL_IMAGE_REF" \
         --build-arg "GIT_COMMIT_SHA=$BUILD_SOURCEVERSION" \
+        --build-arg "NPM_REGISTRY=$NPM_REGISTRY_URL" \
+        --secret id=npm_token,env=SYSTEM_ACCESSTOKEN \
         --cache-from "type=registry,ref=$CACHE_REF" \
         --cache-to "type=registry,ref=$CACHE_REF,mode=max" \
         --label "org.opencontainers.image.source=$BUILD_REPOSITORY_URI" \
@@ -48,3 +52,5 @@ steps:
       DOCKERFILE_PATH: ${{ parameters.dockerfilePath }}
       BUILD_CONTEXT: ${{ parameters.buildContext }}
       ACR_HOST: ${{ parameters.acrHost }}
+      NPM_REGISTRY_URL: ${{ parameters.npmRegistryUrl }}
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)

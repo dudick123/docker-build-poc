@@ -2,8 +2,50 @@ parameters:
   - name: buildContext
     type: string
     default: '.'
+  - name: dockerfilePath
+    type: string
+    default: 'Dockerfile'
+  - name: tenantName
+    type: string
+  - name: appName
+    type: string
 
 steps:
   - bash: |
-      echo "STUB: react.yml runtime not yet implemented"
-    displayName: 'STUB: React Runtime (Phase 6)'
+      CONTEXT_DIR="$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT"
+      PKG_JSON="$CONTEXT_DIR/package.json"
+
+      # Advisory: package.json presence
+      if [ ! -f "$PKG_JSON" ]; then
+        echo "##vso[task.logissue type=warning]No package.json found in $BUILD_CONTEXT. Expected package.json for runtimeType: react."
+        echo "##vso[task.setvariable variable=REACT_VERSION;isOutput=true]"
+        exit 0
+      fi
+
+      # Next.js SSR detection
+      if grep -q '"next"' "$PKG_JSON"; then
+        NEXT_HAS_EXPORT=false
+        for CONFIG in "$CONTEXT_DIR/next.config.js" "$CONTEXT_DIR/next.config.mjs"; do
+          if [ -f "$CONFIG" ] && grep -qE 'output.*export' "$CONFIG"; then
+            NEXT_HAS_EXPORT=true
+            break
+          fi
+        done
+        if [ "$NEXT_HAS_EXPORT" = "false" ]; then
+          echo "##vso[task.logissue type=warning]Next.js app detected without 'output: export' in next.config.js. SSR apps require a Node.js runtime in the final image, not nginx. See platform reference Dockerfile at docs/reference-dockerfiles/react-ssr.Dockerfile."
+        fi
+      fi
+
+      # Version extraction
+      REACT_VER=$(grep -oP '"version"\s*:\s*"\K[^"]+' "$PKG_JSON" | head -1)
+      if [ -n "$REACT_VER" ]; then
+        echo "REACT_VERSION resolved to: $REACT_VER"
+      else
+        echo "No 'version' field found in package.json — version tagging will be skipped for this build."
+      fi
+
+      echo "##vso[task.setvariable variable=REACT_VERSION;isOutput=true]$REACT_VER"
+    name: reactRuntime
+    displayName: 'React Runtime Validation'
+    env:
+      BUILD_CONTEXT: ${{ parameters.buildContext }}

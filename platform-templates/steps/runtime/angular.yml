@@ -2,8 +2,41 @@ parameters:
   - name: buildContext
     type: string
     default: '.'
+  - name: dockerfilePath
+    type: string
+    default: 'Dockerfile'
+  - name: tenantName
+    type: string
+  - name: appName
+    type: string
 
 steps:
   - bash: |
-      echo "STUB: angular.yml runtime not yet implemented"
-    displayName: 'STUB: Angular Runtime (Phase 6)'
+      CONTEXT_DIR="$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT"
+      PKG_JSON="$CONTEXT_DIR/package.json"
+
+      # Advisory: package.json presence
+      if [ ! -f "$PKG_JSON" ]; then
+        echo "##vso[task.logissue type=warning]No package.json found in $BUILD_CONTEXT. Expected package.json for runtimeType: angular."
+        echo "##vso[task.setvariable variable=ANGULAR_VERSION;isOutput=true]"
+        exit 0
+      fi
+
+      # Advisory: ng in scripts
+      if ! grep -q '"ng' "$PKG_JSON"; then
+        echo "##vso[task.logissue type=warning]'ng' not found in package.json scripts. Confirm this is an Angular project for runtimeType: angular."
+      fi
+
+      # Version extraction
+      ANGULAR_VER=$(grep -oP '"version"\s*:\s*"\K[^"]+' "$PKG_JSON" | head -1)
+      if [ -n "$ANGULAR_VER" ]; then
+        echo "ANGULAR_VERSION resolved to: $ANGULAR_VER"
+      else
+        echo "No 'version' field found in package.json — version tagging will be skipped for this build."
+      fi
+
+      echo "##vso[task.setvariable variable=ANGULAR_VERSION;isOutput=true]$ANGULAR_VER"
+    name: angularRuntime
+    displayName: 'Angular Runtime Validation'
+    env:
+      BUILD_CONTEXT: ${{ parameters.buildContext }}

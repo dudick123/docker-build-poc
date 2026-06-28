@@ -53,6 +53,7 @@ stages:
               dockerfilePath: ${{ parameters.dockerfilePath }}
               buildContext: ${{ parameters.buildContext }}
               acrHost: $(stageDependencies.Setup.Setup.outputs['resolveTools.ACR_HOST'])
+              npmRegistryUrl: $(stageDependencies.Setup.Setup.outputs['resolveTools.NPM_REGISTRY_URL'])
 
           - ${{ if eq(parameters.runtimeType, 'go') }}:
             - template: steps/runtime/go.yml
@@ -77,11 +78,17 @@ stages:
             - template: steps/runtime/angular.yml
               parameters:
                 buildContext: ${{ parameters.buildContext }}
+                dockerfilePath: ${{ parameters.dockerfilePath }}
+                tenantName: ${{ parameters.tenantName }}
+                appName: ${{ parameters.appName }}
 
           - ${{ if eq(parameters.runtimeType, 'react') }}:
             - template: steps/runtime/react.yml
               parameters:
                 buildContext: ${{ parameters.buildContext }}
+                dockerfilePath: ${{ parameters.dockerfilePath }}
+                tenantName: ${{ parameters.tenantName }}
+                appName: ${{ parameters.appName }}
 
   - stage: SignAndAttest
     displayName: 'Sign & Attest'
