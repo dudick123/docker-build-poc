@@ -5,5 +5,23 @@ parameters:
 
 steps:
   - bash: |
-      echo "STUB: go.yml runtime not yet implemented"
-    displayName: 'STUB: Go Runtime (Phase 4)'
+      GOMOD_PATH="$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT/go.mod"
+      if [ ! -f "$GOMOD_PATH" ]; then
+        echo "##vso[task.logissue type=error]go.mod not found at $GOMOD_PATH. The build context root must contain go.mod for runtimeType: go."
+        exit 1
+      fi
+
+      VERSION_PATH="$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT/VERSION"
+      GO_VER=""
+      if [ -f "$VERSION_PATH" ]; then
+        GO_VER=$(grep -m1 '.' "$VERSION_PATH" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        echo "GO_VERSION resolved to: $GO_VER"
+      else
+        echo "No VERSION file found at $VERSION_PATH — version tag will be skipped for this build."
+      fi
+
+      echo "##vso[task.setvariable variable=GO_VERSION;isOutput=true]$GO_VER"
+    name: goRuntime
+    displayName: 'Go Runtime Validation'
+    env:
+      BUILD_CONTEXT: ${{ parameters.buildContext }}

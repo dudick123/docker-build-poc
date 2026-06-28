@@ -5,5 +5,40 @@ parameters:
 
 steps:
   - bash: |
-      echo "STUB: python.yml runtime not yet implemented"
-    displayName: 'STUB: Python Runtime (Phase 4)'
+      CONTEXT_DIR="$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT"
+
+      # Advisory check: warn if no recognized dependency file is present
+      DEP_FOUND=false
+      for DEP_FILE in requirements.txt pyproject.toml poetry.lock; do
+        if [ -f "$CONTEXT_DIR/$DEP_FILE" ]; then
+          DEP_FOUND=true
+          break
+        fi
+      done
+
+      if [ "$DEP_FOUND" = "false" ]; then
+        echo "##vso[task.logissue type=warning]No recognized Python dependency file found in $BUILD_CONTEXT. Expected one of: requirements.txt, pyproject.toml, poetry.lock"
+      fi
+
+      # Version extraction: pyproject.toml first, then setup.cfg
+      PYTHON_VER=""
+
+      if [ -f "$CONTEXT_DIR/pyproject.toml" ]; then
+        PYTHON_VER=$(grep -E '^version\s*=\s*"[^"]+"' "$CONTEXT_DIR/pyproject.toml" | head -1 | sed 's/.*=\s*"\([^"]*\)".*/\1/')
+      fi
+
+      if [ -z "$PYTHON_VER" ] && [ -f "$CONTEXT_DIR/setup.cfg" ]; then
+        PYTHON_VER=$(grep -E '^version\s*=' "$CONTEXT_DIR/setup.cfg" | head -1 | sed 's/^version\s*=\s*//' | sed 's/[[:space:]]*$//')
+      fi
+
+      if [ -n "$PYTHON_VER" ]; then
+        echo "PYTHON_VERSION resolved to: $PYTHON_VER"
+      else
+        echo "No static version found in pyproject.toml or setup.cfg — version tag will be skipped for this build."
+      fi
+
+      echo "##vso[task.setvariable variable=PYTHON_VERSION;isOutput=true]$PYTHON_VER"
+    name: pythonRuntime
+    displayName: 'Python Runtime Validation'
+    env:
+      BUILD_CONTEXT: ${{ parameters.buildContext }}
