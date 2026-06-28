@@ -14,5 +14,95 @@ parameters:
 
 steps:
   - bash: |
-      echo "STUB: setup.yml not yet implemented"
-    displayName: 'STUB: Setup (Phase 2)'
+      set -uo pipefail
+      ERRORS=()
+
+      check_tool_var() {
+        local name="$1"
+        local value="$2"
+        if [ -z "$value" ]; then
+          ERRORS+=("Variable $name is missing or empty in platform-tool-versions variable group")
+        fi
+      }
+
+      check_tool_var "DOCKER_BUILDKIT_VERSION" "$DOCKER_BUILDKIT_VERSION"
+      check_tool_var "SYFT_VERSION" "$SYFT_VERSION"
+      check_tool_var "COSIGN_VERSION" "$COSIGN_VERSION"
+      check_tool_var "HADOLINT_VERSION" "$HADOLINT_VERSION"
+      check_tool_var "NPM_REGISTRY_URL" "$NPM_REGISTRY_URL"
+
+      if [ ${#ERRORS[@]} -gt 0 ]; then
+        for err in "${ERRORS[@]}"; do
+          echo "##vso[task.logissue type=error]$err"
+        done
+        exit 1
+      fi
+
+      # Emit as step output variables for downstream stage consumption.
+      # Cross-stage reference: $(stageDependencies.Setup.Setup.outputs['resolveTools.VARNAME'])
+      echo "##vso[task.setvariable variable=DOCKER_BUILDKIT_VERSION;isOutput=true]$DOCKER_BUILDKIT_VERSION"
+      echo "##vso[task.setvariable variable=SYFT_VERSION;isOutput=true]$SYFT_VERSION"
+      echo "##vso[task.setvariable variable=COSIGN_VERSION;isOutput=true]$COSIGN_VERSION"
+      echo "##vso[task.setvariable variable=HADOLINT_VERSION;isOutput=true]$HADOLINT_VERSION"
+      echo "##vso[task.setvariable variable=NPM_REGISTRY_URL;isOutput=true]$NPM_REGISTRY_URL"
+
+      echo "Tool versions resolved: Docker/BuildKit=$DOCKER_BUILDKIT_VERSION Syft=$SYFT_VERSION Cosign=$COSIGN_VERSION Hadolint=$HADOLINT_VERSION NPM_REGISTRY=$NPM_REGISTRY_URL"
+    name: resolveTools
+    displayName: 'Resolve tool versions from platform-tool-versions'
+    env:
+      DOCKER_BUILDKIT_VERSION: $(DOCKER_BUILDKIT_VERSION)
+      SYFT_VERSION: $(SYFT_VERSION)
+      COSIGN_VERSION: $(COSIGN_VERSION)
+      HADOLINT_VERSION: $(HADOLINT_VERSION)
+      NPM_REGISTRY_URL: $(NPM_REGISTRY_URL)
+
+  - bash: |
+      set -uo pipefail
+      ERRORS=()
+
+      # tenantName: lowercase alphanumeric + interior hyphens, minimum 2 characters
+      if [[ ! "$TENANT_NAME" =~ ^[a-z0-9][a-z0-9-]*[a-z0-9]$ ]]; then
+        ERRORS+=("tenantName '$TENANT_NAME' does not match required pattern ^[a-z0-9][a-z0-9-]*[a-z0-9]$ (lowercase alphanumeric and hyphens only, minimum 2 characters)")
+      fi
+
+      # appName: same pattern
+      if [[ ! "$APP_NAME" =~ ^[a-z0-9][a-z0-9-]*[a-z0-9]$ ]]; then
+        ERRORS+=("appName '$APP_NAME' does not match required pattern ^[a-z0-9][a-z0-9-]*[a-z0-9]$ (lowercase alphanumeric and hyphens only, minimum 2 characters)")
+      fi
+
+      # runtimeType: must be one of the five supported values
+      case "$RUNTIME_TYPE" in
+        angular|react|springboot|python|go) ;;
+        *)
+          ERRORS+=("runtimeType '$RUNTIME_TYPE' is not supported. Allowed values: angular, react, springboot, python, go")
+          ;;
+      esac
+
+      # dockerfilePath: must exist at the resolved path on the agent workspace
+      RESOLVED_DOCKERFILE="$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT/$DOCKERFILE_PATH"
+      if [ ! -f "$RESOLVED_DOCKERFILE" ]; then
+        ERRORS+=("dockerfilePath not found: $RESOLVED_DOCKERFILE")
+      fi
+
+      # Runtime template existence: belt-and-suspenders check that the dispatch target exists
+      RUNTIME_TEMPLATE="$AGENT_BUILDDIRECTORY/s/platform-templates/steps/runtime/$RUNTIME_TYPE.yml"
+      if [ ! -f "$RUNTIME_TEMPLATE" ]; then
+        ERRORS+=("Runtime template not found: steps/runtime/$RUNTIME_TYPE.yml — contact platform engineering")
+      fi
+
+      if [ ${#ERRORS[@]} -gt 0 ]; then
+        for err in "${ERRORS[@]}"; do
+          echo "##vso[task.logissue type=error]$err"
+        done
+        exit 1
+      fi
+
+      echo "All parameters valid. tenantName=$TENANT_NAME, appName=$APP_NAME, runtimeType=$RUNTIME_TYPE"
+    name: validateParams
+    displayName: 'Validate pipeline parameters'
+    env:
+      TENANT_NAME: ${{ parameters.tenantName }}
+      APP_NAME: ${{ parameters.appName }}
+      RUNTIME_TYPE: ${{ parameters.runtimeType }}
+      DOCKERFILE_PATH: ${{ parameters.dockerfilePath }}
+      BUILD_CONTEXT: ${{ parameters.buildContext }}
