@@ -24,6 +24,18 @@ parameters:
   - name: cosignVersion
     type: string
     default: ''
+  - name: manifestDigest
+    type: string
+    default: ''
+  - name: runtimeVersion
+    type: string
+    default: ''
+  - name: imageRef
+    type: string
+    default: ''
+  - name: runtimeType
+    type: string
+    default: ''
 
 steps:
 
@@ -79,11 +91,9 @@ steps:
         set -euo pipefail
         trap 'rm -f /tmp/cosign.key /tmp/cosign.pub' EXIT
 
-        # Write keys from AKV-provided pipeline variables
         echo "$COSIGN_PRIVATE_KEY_SECRET" > /tmp/cosign.key
         echo "$COSIGN_PUBLIC_KEY_SECRET" > /tmp/cosign.pub
 
-        # Tag and push image to ACR under short SHA tag
         SHORT_SHA="${BUILD_SOURCEVERSION:0:12}"
         ACR_IMAGE_REF="$ACR_HOST/$TENANT_NAME/$APP_NAME"
         LOCAL_IMAGE_REF="$TENANT_NAME/$APP_NAME:pipeline-$BUILD_BUILDID"
@@ -91,22 +101,18 @@ steps:
         docker tag "$LOCAL_IMAGE_REF" "$ACR_IMAGE_REF:$SHORT_SHA"
         docker push "$ACR_IMAGE_REF:$SHORT_SHA"
 
-        # Capture manifest digest from ACR push
         MANIFEST_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$ACR_IMAGE_REF:$SHORT_SHA" \
           | grep -oP 'sha256:[a-f0-9]+')
         echo "Manifest digest: $MANIFEST_DIGEST"
 
-        # Sign the manifest digest
         /tmp/cosign sign --key /tmp/cosign.key "$ACR_IMAGE_REF@$MANIFEST_DIGEST"
 
-        # Attach SBOM as OCI attestation
         /tmp/cosign attest \
           --key /tmp/cosign.key \
           --predicate "$(System.DefaultWorkingDirectory)/sbom.cdx.json" \
           --type cyclonedx \
           "$ACR_IMAGE_REF@$MANIFEST_DIGEST"
 
-        # Verify signature immediately
         /tmp/cosign verify --key /tmp/cosign.pub "$ACR_IMAGE_REF@$MANIFEST_DIGEST"
         echo "Cosign signature verified successfully."
 
@@ -120,16 +126,271 @@ steps:
         COSIGN_PRIVATE_KEY_SECRET: $(cosign-private-key)
         COSIGN_PUBLIC_KEY_SECRET: $(cosign-public-key)
 
-  # ── publish phase (Phase 8 stub) ─────────────────────────────────────────
+  # ── publish phase ────────────────────────────────────────────────────────
 
   - ${{ if eq(parameters.phase, 'publish') }}:
     - bash: |
-        echo "STUB: sbom-sign-publish.yml publish phase not yet implemented"
-      displayName: 'STUB: Publish (Phase 8)'
+        set -euo pipefail
+        FULL_SHA="$BUILD_SOURCEVERSION"
+        SHORT_SHA="${BUILD_SOURCEVERSION:0:12}"
+        BRANCH_NAME=$(echo "$BUILD_SOURCEBRANCH" | sed 's|refs/heads/||' | sed 's|/|-|g')
+        ALIAS_TAG="${BRANCH_NAME}-${SHORT_SHA}"
 
-  # ── notify phase (Phase 8 stub) ──────────────────────────────────────────
+        CANDIDATE_TAGS=("$FULL_SHA" "$ALIAS_TAG")
+        if [ -n "$RUNTIME_VERSION" ]; then
+          if [ "$BRANCH_NAME" = "main" ]; then
+            CANDIDATE_TAGS+=("$RUNTIME_VERSION")
+          else
+            CANDIDATE_TAGS+=("$RUNTIME_VERSION-$SHORT_SHA")
+          fi
+        fi
+
+        for TAG in "${CANDIDATE_TAGS[@]}"; do
+          if [ "$TAG" = "latest" ]; then
+            echo "##vso[task.logissue type=error]Tag '$TAG' equals 'latest'. Pipeline aborted per platform policy (FR-8.4)."
+            exit 1
+          fi
+        done
+        echo "latest-tag assertion passed for tags: ${CANDIDATE_TAGS[*]}"
+      name: assertTags
+      displayName: 'Assert latest tag is prohibited'
+      env:
+        RUNTIME_VERSION: ${{ parameters.runtimeVersion }}
+
+    - bash: |
+        set -euo pipefail
+        ACR_IMAGE_REF="$ACR_HOST/$TENANT_NAME/$APP_NAME"
+        LOCAL_IMAGE_REF="$TENANT_NAME/$APP_NAME:pipeline-$BUILD_BUILDID"
+        FULL_SHA="$BUILD_SOURCEVERSION"
+        SHORT_SHA="${BUILD_SOURCEVERSION:0:12}"
+        BRANCH_NAME=$(echo "$BUILD_SOURCEBRANCH" | sed 's|refs/heads/||' | sed 's|/|-|g')
+
+        docker tag "$LOCAL_IMAGE_REF" "$ACR_IMAGE_REF:$FULL_SHA"
+        docker push "$ACR_IMAGE_REF:$FULL_SHA"
+
+        PUSHED_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$ACR_IMAGE_REF:$FULL_SHA" \
+          | grep -oP 'sha256:[a-f0-9]+')
+        if [ "$PUSHED_DIGEST" != "$MANIFEST_DIGEST" ]; then
+          echo "##vso[task.logissue type=error]Manifest digest mismatch. Expected: $MANIFEST_DIGEST Got: $PUSHED_DIGEST"
+          exit 1
+        fi
+        echo "Digest verified: $PUSHED_DIGEST"
+
+        ALIAS_TAG="${BRANCH_NAME}-${SHORT_SHA}"
+        docker tag "$LOCAL_IMAGE_REF" "$ACR_IMAGE_REF:$ALIAS_TAG"
+        docker push "$ACR_IMAGE_REF:$ALIAS_TAG"
+
+        if [ -n "$RUNTIME_VERSION" ]; then
+          if [ "$BRANCH_NAME" = "main" ]; then
+            if docker manifest inspect "$ACR_IMAGE_REF:$RUNTIME_VERSION" > /dev/null 2>&1; then
+              echo "##vso[task.logissue type=error]Version tag '$RUNTIME_VERSION' already exists in ACR. Bump the version in your project file before merging to main."
+              exit 1
+            fi
+            docker tag "$LOCAL_IMAGE_REF" "$ACR_IMAGE_REF:$RUNTIME_VERSION"
+            docker push "$ACR_IMAGE_REF:$RUNTIME_VERSION"
+          else
+            VERSION_ALIAS="$RUNTIME_VERSION-$SHORT_SHA"
+            docker tag "$LOCAL_IMAGE_REF" "$ACR_IMAGE_REF:$VERSION_ALIAS"
+            docker push "$ACR_IMAGE_REF:$VERSION_ALIAS"
+          fi
+        else
+          echo "No runtime version detected — skipping version tag."
+        fi
+
+        IMAGE_FULL_REF="$ACR_IMAGE_REF@$MANIFEST_DIGEST"
+        echo "IMAGE_REF=$IMAGE_FULL_REF"
+        echo "##vso[task.setvariable variable=IMAGE_REF;isOutput=true]$IMAGE_FULL_REF"
+      name: publish
+      displayName: 'Push image tags and verify digest'
+      env:
+        ACR_HOST: ${{ parameters.acrHost }}
+        TENANT_NAME: ${{ parameters.tenantName }}
+        APP_NAME: ${{ parameters.appName }}
+        MANIFEST_DIGEST: ${{ parameters.manifestDigest }}
+        RUNTIME_VERSION: ${{ parameters.runtimeVersion }}
+
+    - bash: |
+        set -euo pipefail
+        FULL_SHA="$BUILD_SOURCEVERSION"
+        SHORT_SHA="${BUILD_SOURCEVERSION:0:12}"
+        BRANCH_NAME=$(echo "$BUILD_SOURCEBRANCH" | sed 's|refs/heads/||' | sed 's|/|-|g')
+        ALIAS_TAG="${BRANCH_NAME}-${SHORT_SHA}"
+        ACR_REPO="$ACR_HOST/$TENANT_NAME/$APP_NAME"
+        IMAGE_FULL_REF="$ACR_REPO@$MANIFEST_DIGEST"
+        SBOM_ARTIFACT="sbom-$TENANT_NAME-$APP_NAME"
+
+        if [ -n "$RUNTIME_VERSION" ]; then
+          if [ "$BRANCH_NAME" = "main" ]; then
+            TAGS_ARRAY=$(jq -n --arg a "$FULL_SHA" --arg b "$ALIAS_TAG" --arg c "$RUNTIME_VERSION" '[$a,$b,$c]')
+          else
+            TAGS_ARRAY=$(jq -n --arg a "$FULL_SHA" --arg b "$ALIAS_TAG" --arg c "${RUNTIME_VERSION}-${SHORT_SHA}" '[$a,$b,$c]')
+          fi
+        else
+          TAGS_ARRAY=$(jq -n --arg a "$FULL_SHA" --arg b "$ALIAS_TAG" '[$a,$b]')
+        fi
+
+        jq -n \
+          --arg imageRef "$IMAGE_FULL_REF" \
+          --arg manifestDigest "$MANIFEST_DIGEST" \
+          --argjson tags "$TAGS_ARRAY" \
+          --arg sbomArtifact "$SBOM_ARTIFACT" \
+          --arg pipelineRunId "$BUILD_BUILDID" \
+          --arg acrRepository "$ACR_REPO" \
+          --arg gitCommit "$FULL_SHA" \
+          '{imageRef:$imageRef,manifestDigest:$manifestDigest,tags:$tags,sbomArtifact:$sbomArtifact,cosignStatus:"signed",pipelineRunId:$pipelineRunId,acrRepository:$acrRepository,gitCommit:$gitCommit}' \
+          > provenance.json
+        echo "provenance.json written"
+      displayName: 'Write provenance.json'
+      env:
+        ACR_HOST: ${{ parameters.acrHost }}
+        TENANT_NAME: ${{ parameters.tenantName }}
+        APP_NAME: ${{ parameters.appName }}
+        MANIFEST_DIGEST: ${{ parameters.manifestDigest }}
+        RUNTIME_VERSION: ${{ parameters.runtimeVersion }}
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Provenance as Pipeline Artifact'
+      inputs:
+        targetPath: '$(System.DefaultWorkingDirectory)/provenance.json'
+        artifact: 'provenance-${{ parameters.tenantName }}-${{ parameters.appName }}'
+        publishLocation: 'pipeline'
+
+  # ── notify phase ─────────────────────────────────────────────────────────
 
   - ${{ if eq(parameters.phase, 'notify') }}:
     - bash: |
-        echo "STUB: sbom-sign-publish.yml notify phase not yet implemented"
-      displayName: 'STUB: Notify (Phase 8)'
+        set -euo pipefail
+        if [ "$BUILD_REASON" != "PullRequest" ]; then
+          echo "Skipping PR comment: not a pull request build (BUILD_REASON=$BUILD_REASON)"
+          exit 0
+        fi
+
+        if [ -n "$IMAGE_REF" ]; then
+          STATUS_ICON="✅"
+          STATUS_TEXT="Succeeded"
+          STATUS_DETAIL="Image published to ACR. Digest: \`${MANIFEST_DIGEST}\`"
+        elif [ "$PIPELINE_DRYRUN" = "True" ]; then
+          STATUS_ICON="🔵"
+          STATUS_TEXT="Dry Run"
+          STATUS_DETAIL="Dry run — no image was pushed to ACR and the security scan pipeline was not triggered."
+        else
+          STATUS_ICON="❌"
+          STATUS_TEXT="Failed"
+          STATUS_DETAIL="Pipeline failed before image publish. Check the pipeline run for details."
+        fi
+
+        TABLE_ROWS="| **Tenant / App** | \`${TENANT_NAME}/${APP_NAME}\` |\n"
+        TABLE_ROWS+="| **Runtime** | \`${RUNTIME_TYPE}\` |\n"
+        TABLE_ROWS+="| **Status** | ${STATUS_ICON} ${STATUS_TEXT} |"
+        if [ -n "$IMAGE_REF" ]; then
+          TABLE_ROWS+="\n| **Image Ref** | \`${IMAGE_REF}\` |"
+          TABLE_ROWS+="\n| **Manifest Digest** | \`${MANIFEST_DIGEST}\` |"
+          TABLE_ROWS+="\n| **Cosign Status** | signed ✅ |"
+          TABLE_ROWS+="\n| **SBOM Artifact** | \`sbom-${TENANT_NAME}-${APP_NAME}\` |"
+        fi
+
+        COMMENT_BODY="## ${STATUS_ICON} Container Build — ${STATUS_TEXT}\n\n| Field | Value |\n|---|---|\n${TABLE_ROWS}\n\n${STATUS_DETAIL}\n\n> **Security scanning** (Trivy, Nexus, Fortify) runs in a separate advisory-only pipeline triggered after image publish."
+
+        PAYLOAD=$(jq -n --arg body "$(printf '%b' "$COMMENT_BODY")" \
+          '{"comments":[{"parentCommentId":0,"content":$body,"commentType":1}],"status":1}')
+
+        THREAD_URL="${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}${SYSTEM_TEAMPROJECT}/_apis/git/repositories/${BUILD_REPOSITORY_ID}/pullRequests/${SYSTEM_PULLREQUEST_PULLREQUESTID}/threads?api-version=7.1"
+
+        curl -sSf -X POST \
+          -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" \
+          -H "Content-Type: application/json" \
+          --data "$PAYLOAD" \
+          "$THREAD_URL"
+        echo "PR comment posted"
+      name: postPrComment
+      displayName: 'Post PR build summary comment'
+      env:
+        TENANT_NAME: ${{ parameters.tenantName }}
+        APP_NAME: ${{ parameters.appName }}
+        RUNTIME_TYPE: ${{ parameters.runtimeType }}
+        IMAGE_REF: ${{ parameters.imageRef }}
+        MANIFEST_DIGEST: ${{ parameters.manifestDigest }}
+        PIPELINE_DRYRUN: ${{ parameters.dryRun }}
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+    - bash: |
+        if [ -n "$MANIFEST_DIGEST" ]; then
+          echo "##vso[build.addbuildtag]$MANIFEST_DIGEST"
+          echo "ADO build tag set to: $MANIFEST_DIGEST"
+        else
+          echo "##vso[build.addbuildtag]dryrun-$BUILD_BUILDID"
+          echo "ADO build tag set to: dryrun-$BUILD_BUILDID"
+        fi
+      name: setBuildTag
+      displayName: 'Set ADO pipeline run build tag'
+      env:
+        MANIFEST_DIGEST: ${{ parameters.manifestDigest }}
+
+    - bash: |
+        set -euo pipefail
+        if [ -z "$TEAMS_WEBHOOK_URL" ]; then
+          echo "Warning: TEAMS_WEBHOOK_URL not set for tenant — skipping Teams notification."
+          exit 0
+        fi
+
+        if [ -n "$IMAGE_REF" ]; then
+          STATUS_TEXT="Succeeded"
+          STATUS_COLOR="Good"
+          DETAIL_TEXT="Image: ${IMAGE_REF}"
+        elif [ "$PIPELINE_DRYRUN" = "True" ]; then
+          STATUS_TEXT="Dry Run"
+          STATUS_COLOR="Accent"
+          DETAIL_TEXT="Dry run completed — no image was pushed to ACR."
+        else
+          STATUS_TEXT="Failed"
+          STATUS_COLOR="Attention"
+          DETAIL_TEXT="Pipeline failed. Check the ADO run for details."
+        fi
+
+        RUN_URL="${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}${SYSTEM_TEAMPROJECT}/_build/results?buildId=${BUILD_BUILDID}"
+
+        PAYLOAD=$(jq -n \
+          --arg title "Build ${STATUS_TEXT}: ${TENANT_NAME}/${APP_NAME}" \
+          --arg statusColor "$STATUS_COLOR" \
+          --arg runtimeType "$RUNTIME_TYPE" \
+          --arg statusText "$STATUS_TEXT" \
+          --arg detailText "$DETAIL_TEXT" \
+          --arg runUrl "$RUN_URL" \
+          '{
+            type:"message",
+            attachments:[{
+              contentType:"application/vnd.microsoft.card.adaptive",
+              content:{
+                type:"AdaptiveCard",
+                version:"1.4",
+                "$schema":"http://adaptivecards.io/schemas/adaptive-card.json",
+                body:[
+                  {type:"TextBlock",text:$title,weight:"Bolder",size:"Medium",color:$statusColor},
+                  {type:"FactSet",facts:[
+                    {title:"Runtime",value:$runtimeType},
+                    {title:"Status",value:$statusText},
+                    {title:"Detail",value:$detailText}
+                  ]},
+                  {type:"ActionSet",actions:[
+                    {type:"Action.OpenUrl",title:"View Pipeline Run",url:$runUrl}
+                  ]}
+                ]
+              }
+            }]
+          }')
+
+        curl -sSf -X POST \
+          -H "Content-Type: application/json" \
+          --data "$PAYLOAD" \
+          "$TEAMS_WEBHOOK_URL"
+        echo "Teams notification sent"
+      name: notifyTeams
+      displayName: 'Send Teams channel notification'
+      env:
+        TEAMS_WEBHOOK_URL: $(TEAMS_WEBHOOK_URL)
+        IMAGE_REF: ${{ parameters.imageRef }}
+        MANIFEST_DIGEST: ${{ parameters.manifestDigest }}
+        RUNTIME_TYPE: ${{ parameters.runtimeType }}
+        TENANT_NAME: ${{ parameters.tenantName }}
+        APP_NAME: ${{ parameters.appName }}
+        PIPELINE_DRYRUN: ${{ parameters.dryRun }}

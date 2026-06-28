@@ -115,7 +115,23 @@ stages:
     condition: and(succeeded(), eq('${{ parameters.dryRun }}', 'false'))
     jobs:
       - job: Publish
-        displayName: 'Push image to ACR, verify digest'
+        displayName: 'Push image tags, verify digest, publish provenance'
+        variables:
+          - ${{ if eq(parameters.runtimeType, 'go') }}:
+            - name: RUNTIME_VERSION
+              value: $(stageDependencies.Build.Build.outputs['goRuntime.GO_VERSION'])
+          - ${{ elseif eq(parameters.runtimeType, 'python') }}:
+            - name: RUNTIME_VERSION
+              value: $(stageDependencies.Build.Build.outputs['pythonRuntime.PYTHON_VERSION'])
+          - ${{ elseif eq(parameters.runtimeType, 'springboot') }}:
+            - name: RUNTIME_VERSION
+              value: $(stageDependencies.Build.Build.outputs['springbootRuntime.SPRINGBOOT_VERSION'])
+          - ${{ elseif eq(parameters.runtimeType, 'angular') }}:
+            - name: RUNTIME_VERSION
+              value: $(stageDependencies.Build.Build.outputs['angularRuntime.ANGULAR_VERSION'])
+          - ${{ else }}:
+            - name: RUNTIME_VERSION
+              value: $(stageDependencies.Build.Build.outputs['reactRuntime.REACT_VERSION'])
         steps:
           - template: steps/sbom-sign-publish.yml
             parameters:
@@ -123,11 +139,14 @@ stages:
               tenantName: ${{ parameters.tenantName }}
               appName: ${{ parameters.appName }}
               dryRun: ${{ parameters.dryRun }}
+              acrHost: $(stageDependencies.Setup.Setup.outputs['resolveTools.ACR_HOST'])
+              manifestDigest: $(stageDependencies.SignAndAttest.SignAndAttest.outputs['signAttest.MANIFEST_DIGEST'])
+              runtimeVersion: $(RUNTIME_VERSION)
 
   - stage: Notify
     displayName: 'Notify'
     dependsOn: Publish
-    condition: succeededOrFailed()
+    condition: in(dependencies.Publish.result, 'Succeeded', 'Failed', 'SucceededWithIssues', 'Skipped')
     jobs:
       - job: Notify
         displayName: 'Post PR comment and send Teams notification'
@@ -138,3 +157,7 @@ stages:
               tenantName: ${{ parameters.tenantName }}
               appName: ${{ parameters.appName }}
               dryRun: ${{ parameters.dryRun }}
+              runtimeType: ${{ parameters.runtimeType }}
+              acrHost: $(stageDependencies.Setup.Setup.outputs['resolveTools.ACR_HOST'])
+              manifestDigest: $(stageDependencies.SignAndAttest.SignAndAttest.outputs['signAttest.MANIFEST_DIGEST'])
+              imageRef: $(stageDependencies.Publish.Publish.outputs['publish.IMAGE_REF'])
