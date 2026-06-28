@@ -2,8 +2,100 @@ parameters:
   - name: buildContext
     type: string
     default: '.'
+  - name: dockerfilePath
+    type: string
+    default: 'Dockerfile'
+  - name: tenantName
+    type: string
+  - name: appName
+    type: string
+  - name: acrHost
+    type: string
 
 steps:
   - bash: |
-      echo "STUB: springboot.yml runtime not yet implemented"
-    displayName: 'STUB: Spring Boot Runtime (Phase 5)'
+      CONTEXT_DIR="$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT"
+
+      # Build tool detection
+      BUILD_TOOL=""
+      if [ -f "$CONTEXT_DIR/gradlew" ]; then
+        BUILD_TOOL="gradle"
+      elif [ -f "$CONTEXT_DIR/pom.xml" ]; then
+        BUILD_TOOL="maven"
+      else
+        echo "##vso[task.logissue type=error]No build tool found in $CONTEXT_DIR. Expected 'gradlew' (Gradle) or 'pom.xml' (Maven) for runtimeType: springboot."
+        exit 1
+      fi
+
+      echo "Build tool detected: $BUILD_TOOL"
+
+      # Version extraction
+      SPRING_VER=""
+      if [ "$BUILD_TOOL" = "gradle" ]; then
+        if [ -f "$CONTEXT_DIR/build.gradle" ]; then
+          SPRING_VER=$(grep -E "^version\s*=" "$CONTEXT_DIR/build.gradle" | head -1 | sed "s/.*=\s*['\"]//;s/['\"].*//")
+        fi
+        if [ -z "$SPRING_VER" ] && [ -f "$CONTEXT_DIR/gradle.properties" ]; then
+          SPRING_VER=$(grep -E "^version\s*=" "$CONTEXT_DIR/gradle.properties" | head -1 | sed "s/.*=\s*//;s/[[:space:]]*$//")
+        fi
+      elif [ "$BUILD_TOOL" = "maven" ]; then
+        if [ -f "$CONTEXT_DIR/pom.xml" ]; then
+          SPRING_VER=$(grep -oP '(?<=<version>)[^<]+' "$CONTEXT_DIR/pom.xml" | head -1)
+        fi
+      fi
+
+      if [ -n "$SPRING_VER" ]; then
+        echo "SPRINGBOOT_VERSION resolved to: $SPRING_VER"
+      else
+        echo "No static version extractable from project metadata — version tag will be skipped for this build."
+      fi
+
+      # Dockerfile test-export stage assertion
+      DOCKERFILE_RESOLVED="$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT/$DOCKERFILE_PATH"
+      if ! grep -q 'AS test-export' "$DOCKERFILE_RESOLVED"; then
+        echo "##vso[task.logissue type=error]Dockerfile at $DOCKERFILE_RESOLVED does not contain a 'test-export' stage. Spring Boot builds require 'FROM scratch AS test-export' to extract test results. See platform reference Dockerfile at docs/reference-dockerfiles/springboot.Dockerfile."
+        exit 1
+      fi
+
+      echo "##vso[task.setvariable variable=SPRINGBOOT_VERSION;isOutput=true]$SPRING_VER"
+    name: springbootRuntime
+    displayName: 'Spring Boot Runtime Validation'
+    env:
+      BUILD_CONTEXT: ${{ parameters.buildContext }}
+      DOCKERFILE_PATH: ${{ parameters.dockerfilePath }}
+
+  - bash: |
+      DOCKER_BUILDKIT=1 docker build \
+        --target test-export \
+        --output "type=local,dest=./test-results" \
+        -f "$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT/$DOCKERFILE_PATH" \
+        "$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT"
+    name: extractTests
+    displayName: 'Extract Spring Boot Test Results'
+    env:
+      BUILD_CONTEXT: ${{ parameters.buildContext }}
+      DOCKERFILE_PATH: ${{ parameters.dockerfilePath }}
+
+  - task: PublishTestResults@2
+    displayName: 'Publish Spring Boot Test Results'
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: '**/*.xml'
+      searchFolder: '$(System.DefaultWorkingDirectory)/test-results'
+      failTaskOnFailedTests: true
+
+  - bash: |
+      LOCAL_IMAGE_REF="$TENANT_NAME/$APP_NAME:pipeline-$BUILD_BUILDID"
+      DOCKER_BUILDKIT=1 docker build \
+        --target final \
+        -f "$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT/$DOCKERFILE_PATH" \
+        -t "$LOCAL_IMAGE_REF" \
+        "$BUILD_SOURCESDIRECTORY/$BUILD_CONTEXT"
+      echo "Final image built and tagged as: $LOCAL_IMAGE_REF"
+    name: buildFinalImage
+    displayName: 'Build Spring Boot Final Image'
+    env:
+      BUILD_CONTEXT: ${{ parameters.buildContext }}
+      DOCKERFILE_PATH: ${{ parameters.dockerfilePath }}
+      TENANT_NAME: ${{ parameters.tenantName }}
+      APP_NAME: ${{ parameters.appName }}

@@ -68,6 +68,10 @@ stages:
             - template: steps/runtime/springboot.yml
               parameters:
                 buildContext: ${{ parameters.buildContext }}
+                dockerfilePath: ${{ parameters.dockerfilePath }}
+                tenantName: ${{ parameters.tenantName }}
+                appName: ${{ parameters.appName }}
+                acrHost: $(stageDependencies.Setup.Setup.outputs['resolveTools.ACR_HOST'])
 
           - ${{ if eq(parameters.runtimeType, 'angular') }}:
             - template: steps/runtime/angular.yml
