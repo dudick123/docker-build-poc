@@ -44,6 +44,7 @@ stages:
             parameters:
               dockerfilePath: ${{ parameters.dockerfilePath }}
               buildContext: ${{ parameters.buildContext }}
+              hadolintVersion: $(stageDependencies.Setup.Setup.outputs['resolveTools.HADOLINT_VERSION'])
 
           - template: steps/docker-build.yml
             parameters:
@@ -51,6 +52,7 @@ stages:
               appName: ${{ parameters.appName }}
               dockerfilePath: ${{ parameters.dockerfilePath }}
               buildContext: ${{ parameters.buildContext }}
+              acrHost: $(stageDependencies.Setup.Setup.outputs['resolveTools.ACR_HOST'])
 
           - ${{ if eq(parameters.runtimeType, 'go') }}:
             - template: steps/runtime/go.yml

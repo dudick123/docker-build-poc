@@ -9,8 +9,42 @@ parameters:
   - name: buildContext
     type: string
     default: '.'
+  - name: acrHost
+    type: string
 
 steps:
   - bash: |
-      echo "STUB: docker-build.yml not yet implemented"
-    displayName: 'STUB: Docker Build (Phase 3)'
+      set -euo pipefail
+
+      LOCAL_IMAGE_REF="$TENANT_NAME/$APP_NAME:pipeline-$BUILD_BUILDID"
+      CACHE_REF="$ACR_HOST/$TENANT_NAME/$APP_NAME:buildcache"
+      IIDFILE="/tmp/image.iid"
+      CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      echo "Building image: $LOCAL_IMAGE_REF"
+      echo "Cache ref: $CACHE_REF"
+
+      DOCKER_BUILDKIT=1 docker build \
+        -f "$BUILD_CONTEXT/$DOCKERFILE_PATH" \
+        "$BUILD_CONTEXT" \
+        --iidfile "$IIDFILE" \
+        -t "$LOCAL_IMAGE_REF" \
+        --build-arg "GIT_COMMIT_SHA=$BUILD_SOURCEVERSION" \
+        --cache-from "type=registry,ref=$CACHE_REF" \
+        --cache-to "type=registry,ref=$CACHE_REF,mode=max" \
+        --label "org.opencontainers.image.source=$BUILD_REPOSITORY_URI" \
+        --label "org.opencontainers.image.created=$CREATED_AT" \
+        --label "org.opencontainers.image.revision=$BUILD_SOURCEVERSION" \
+        --label "org.opencontainers.image.title=$TENANT_NAME/$APP_NAME"
+
+      DIGEST=$(cat "$IIDFILE")
+      echo "IMAGE_DIGEST=$DIGEST"
+      echo "##vso[task.setvariable variable=IMAGE_DIGEST;isOutput=true]$DIGEST"
+    name: buildImage
+    displayName: 'Build image with BuildKit'
+    env:
+      TENANT_NAME: ${{ parameters.tenantName }}
+      APP_NAME: ${{ parameters.appName }}
+      DOCKERFILE_PATH: ${{ parameters.dockerfilePath }}
+      BUILD_CONTEXT: ${{ parameters.buildContext }}
+      ACR_HOST: ${{ parameters.acrHost }}

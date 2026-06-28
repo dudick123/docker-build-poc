@@ -30,6 +30,7 @@ steps:
       check_tool_var "COSIGN_VERSION" "$COSIGN_VERSION"
       check_tool_var "HADOLINT_VERSION" "$HADOLINT_VERSION"
       check_tool_var "NPM_REGISTRY_URL" "$NPM_REGISTRY_URL"
+      check_tool_var "ACR_HOST" "$ACR_HOST"
 
       if [ ${#ERRORS[@]} -gt 0 ]; then
         for err in "${ERRORS[@]}"; do
@@ -45,8 +46,9 @@ steps:
       echo "##vso[task.setvariable variable=COSIGN_VERSION;isOutput=true]$COSIGN_VERSION"
       echo "##vso[task.setvariable variable=HADOLINT_VERSION;isOutput=true]$HADOLINT_VERSION"
       echo "##vso[task.setvariable variable=NPM_REGISTRY_URL;isOutput=true]$NPM_REGISTRY_URL"
+      echo "##vso[task.setvariable variable=ACR_HOST;isOutput=true]$ACR_HOST"
 
-      echo "Tool versions resolved: Docker/BuildKit=$DOCKER_BUILDKIT_VERSION Syft=$SYFT_VERSION Cosign=$COSIGN_VERSION Hadolint=$HADOLINT_VERSION NPM_REGISTRY=$NPM_REGISTRY_URL"
+      echo "Tool versions resolved: Docker/BuildKit=$DOCKER_BUILDKIT_VERSION Syft=$SYFT_VERSION Cosign=$COSIGN_VERSION Hadolint=$HADOLINT_VERSION NPM_REGISTRY=$NPM_REGISTRY_URL ACR=$ACR_HOST"
     name: resolveTools
     displayName: 'Resolve tool versions from platform-tool-versions'
     env:
@@ -55,6 +57,7 @@ steps:
       COSIGN_VERSION: $(COSIGN_VERSION)
       HADOLINT_VERSION: $(HADOLINT_VERSION)
       NPM_REGISTRY_URL: $(NPM_REGISTRY_URL)
+      ACR_HOST: $(ACR_HOST)
 
   - bash: |
       set -uo pipefail

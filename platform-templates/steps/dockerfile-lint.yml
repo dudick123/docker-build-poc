@@ -5,8 +5,39 @@ parameters:
   - name: buildContext
     type: string
     default: '.'
+  - name: hadolintVersion
+    type: string
 
 steps:
   - bash: |
-      echo "STUB: dockerfile-lint.yml not yet implemented"
-    displayName: 'STUB: Dockerfile Lint (Phase 3)'
+      set -euo pipefail
+      HADOLINT_BIN="/tmp/hadolint"
+      HADOLINT_URL="https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64"
+
+      echo "Downloading Hadolint ${HADOLINT_VERSION} from GitHub releases..."
+      curl -sSfL "$HADOLINT_URL" -o "$HADOLINT_BIN"
+      chmod +x "$HADOLINT_BIN"
+      echo "Hadolint downloaded: $($HADOLINT_BIN --version)"
+    displayName: 'Download Hadolint'
+    env:
+      HADOLINT_VERSION: ${{ parameters.hadolintVersion }}
+
+  - bash: |
+      set -uo pipefail
+      HADOLINT_BIN="/tmp/hadolint"
+      TARGET_DOCKERFILE="$BUILD_CONTEXT/$DOCKERFILE_PATH"
+      CONFIG_FLAG=""
+
+      if [ -f "$BUILD_CONTEXT/.hadolint.yaml" ]; then
+        CONFIG_FLAG="--config $BUILD_CONTEXT/.hadolint.yaml"
+        echo "Using tenant .hadolint.yaml from $BUILD_CONTEXT/.hadolint.yaml"
+      fi
+
+      echo "Linting $TARGET_DOCKERFILE ..."
+      # shellcheck disable=SC2086
+      "$HADOLINT_BIN" --failure-threshold error --format tty $CONFIG_FLAG "$TARGET_DOCKERFILE"
+      echo "Dockerfile lint passed."
+    displayName: 'Run Hadolint'
+    env:
+      DOCKERFILE_PATH: ${{ parameters.dockerfilePath }}
+      BUILD_CONTEXT: ${{ parameters.buildContext }}
