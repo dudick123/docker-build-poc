@@ -1,0 +1,9 @@
+parameters:
+  - name: buildContext
+    type: string
+    default: '.'
+
+steps:
+  - bash: |
+      echo "STUB: react.yml runtime not yet implemented"
+    displayName: 'STUB: React Runtime (Phase 6)'

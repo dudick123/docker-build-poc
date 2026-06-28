@@ -1,0 +1,18 @@
+parameters:
+  - name: tenantName
+    type: string
+  - name: appName
+    type: string
+  - name: runtimeType
+    type: string
+  - name: dockerfilePath
+    type: string
+    default: 'Dockerfile'
+  - name: buildContext
+    type: string
+    default: '.'
+
+steps:
+  - bash: |
+      echo "STUB: setup.yml not yet implemented"
+    displayName: 'STUB: Setup (Phase 2)'

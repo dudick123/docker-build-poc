@@ -1,0 +1,120 @@
+parameters:
+  - name: tenantName
+    type: string
+  - name: appName
+    type: string
+  - name: runtimeType
+    type: string
+  - name: dockerfilePath
+    type: string
+    default: 'Dockerfile'
+  - name: buildContext
+    type: string
+    default: '.'
+  - name: dryRun
+    type: boolean
+    default: false
+
+stages:
+  - stage: Setup
+    displayName: 'Setup'
+    jobs:
+      - job: Setup
+        displayName: 'Resolve tools and validate parameters'
+        steps:
+          - template: steps/setup.yml
+            parameters:
+              tenantName: ${{ parameters.tenantName }}
+              appName: ${{ parameters.appName }}
+              runtimeType: ${{ parameters.runtimeType }}
+              dockerfilePath: ${{ parameters.dockerfilePath }}
+              buildContext: ${{ parameters.buildContext }}
+
+  - stage: Build
+    displayName: 'Build'
+    dependsOn: Setup
+    jobs:
+      - job: Build
+        displayName: 'Lint Dockerfile and build image'
+        steps:
+          - template: steps/dockerfile-lint.yml
+            parameters:
+              dockerfilePath: ${{ parameters.dockerfilePath }}
+              buildContext: ${{ parameters.buildContext }}
+
+          - template: steps/docker-build.yml
+            parameters:
+              tenantName: ${{ parameters.tenantName }}
+              appName: ${{ parameters.appName }}
+              dockerfilePath: ${{ parameters.dockerfilePath }}
+              buildContext: ${{ parameters.buildContext }}
+
+          - ${{ if eq(parameters.runtimeType, 'go') }}:
+            - template: steps/runtime/go.yml
+              parameters:
+                buildContext: ${{ parameters.buildContext }}
+
+          - ${{ if eq(parameters.runtimeType, 'python') }}:
+            - template: steps/runtime/python.yml
+              parameters:
+                buildContext: ${{ parameters.buildContext }}
+
+          - ${{ if eq(parameters.runtimeType, 'springboot') }}:
+            - template: steps/runtime/springboot.yml
+              parameters:
+                buildContext: ${{ parameters.buildContext }}
+
+          - ${{ if eq(parameters.runtimeType, 'angular') }}:
+            - template: steps/runtime/angular.yml
+              parameters:
+                buildContext: ${{ parameters.buildContext }}
+
+          - ${{ if eq(parameters.runtimeType, 'react') }}:
+            - template: steps/runtime/react.yml
+              parameters:
+                buildContext: ${{ parameters.buildContext }}
+
+  - stage: SignAndAttest
+    displayName: 'Sign & Attest'
+    dependsOn: Build
+    condition: and(succeeded(), eq('${{ parameters.dryRun }}', 'false'))
+    jobs:
+      - job: SignAndAttest
+        displayName: 'Generate SBOM, sign image, attach attestation'
+        steps:
+          - template: steps/sbom-sign-publish.yml
+            parameters:
+              phase: signAndAttest
+              tenantName: ${{ parameters.tenantName }}
+              appName: ${{ parameters.appName }}
+              dryRun: ${{ parameters.dryRun }}
+
+  - stage: Publish
+    displayName: 'Publish'
+    dependsOn: SignAndAttest
+    condition: and(succeeded(), eq('${{ parameters.dryRun }}', 'false'))
+    jobs:
+      - job: Publish
+        displayName: 'Push image to ACR, verify digest'
+        steps:
+          - template: steps/sbom-sign-publish.yml
+            parameters:
+              phase: publish
+              tenantName: ${{ parameters.tenantName }}
+              appName: ${{ parameters.appName }}
+              dryRun: ${{ parameters.dryRun }}
+
+  - stage: Notify
+    displayName: 'Notify'
+    dependsOn: Publish
+    condition: succeededOrFailed()
+    jobs:
+      - job: Notify
+        displayName: 'Post PR comment and send Teams notification'
+        steps:
+          - template: steps/sbom-sign-publish.yml
+            parameters:
+              phase: notify
+              tenantName: ${{ parameters.tenantName }}
+              appName: ${{ parameters.appName }}
+              dryRun: ${{ parameters.dryRun }}

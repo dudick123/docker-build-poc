@@ -1,0 +1,9 @@
+parameters:
+  - name: buildContext
+    type: string
+    default: '.'
+
+steps:
+  - bash: |
+      echo "STUB: angular.yml runtime not yet implemented"
+    displayName: 'STUB: Angular Runtime (Phase 6)'

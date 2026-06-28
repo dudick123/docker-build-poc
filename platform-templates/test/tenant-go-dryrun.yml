@@ -1,0 +1,9 @@
+trigger: none
+
+extends:
+  template: ../container-build-v2.yml
+  parameters:
+    tenantName: test-tenant
+    appName: test-app
+    runtimeType: go
+    dryRun: true

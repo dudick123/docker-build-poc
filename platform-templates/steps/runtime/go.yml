@@ -1,0 +1,9 @@
+parameters:
+  - name: buildContext
+    type: string
+    default: '.'
+
+steps:
+  - bash: |
+      echo "STUB: go.yml runtime not yet implemented"
+    displayName: 'STUB: Go Runtime (Phase 4)'

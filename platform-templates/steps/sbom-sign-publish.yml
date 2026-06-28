@@ -1,0 +1,19 @@
+parameters:
+  - name: phase
+    type: string
+    values:
+      - signAndAttest
+      - publish
+      - notify
+  - name: tenantName
+    type: string
+  - name: appName
+    type: string
+  - name: dryRun
+    type: boolean
+    default: false
+
+steps:
+  - bash: |
+      echo "STUB: sbom-sign-publish.yml not yet implemented (phase=${{ parameters.phase }})"
+    displayName: 'STUB: SBOM Sign Publish — ${{ parameters.phase }} (Phases 7-8)'

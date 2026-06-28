@@ -1,0 +1,12 @@
+parameters:
+  - name: dockerfilePath
+    type: string
+    default: 'Dockerfile'
+  - name: buildContext
+    type: string
+    default: '.'
+
+steps:
+  - bash: |
+      echo "STUB: dockerfile-lint.yml not yet implemented"
+    displayName: 'STUB: Dockerfile Lint (Phase 3)'

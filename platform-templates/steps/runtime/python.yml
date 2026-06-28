@@ -1,0 +1,9 @@
+parameters:
+  - name: buildContext
+    type: string
+    default: '.'
+
+steps:
+  - bash: |
+      echo "STUB: python.yml runtime not yet implemented"
+    displayName: 'STUB: Python Runtime (Phase 4)'
