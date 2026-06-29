@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+# This Dockerfile intentionally contains a Hadolint DL3020 ERROR:
+# ADD is used for local files — COPY must be used instead.
+FROM golang:1.22-alpine AS build
+
+WORKDIR /src
+
+ADD . /src
+
+RUN go build -o /out/app ./cmd/app
+
+FROM gcr.io/distroless/static-debian12:nonroot AS final
+
+COPY --from=build /out/app /app
+
+ENTRYPOINT ["/app"]

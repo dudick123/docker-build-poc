@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "test-app"
+version = "2.1.0"
+description = "Platform test application"
+authors = ["Platform Engineering"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.110.0"
+uvicorn = {extras = ["standard"], version = "^0.29.0"}
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

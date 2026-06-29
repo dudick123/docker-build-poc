@@ -1,0 +1,72 @@
+# ============================================================================
+# Platform Container Build Pipeline v2 — Go Example
+#
+# Drop this file at the root of your Go application repository as
+# azure-pipelines.yml. Adjust the three required parameters (tenantName,
+# appName, runtimeType) and commit. No other pipeline infrastructure is
+# required — the platform template handles everything else.
+#
+# Prerequisites:
+#   - go.mod at the repository root (or at buildContext root if overridden)
+#   - A Dockerfile authored per the platform pattern (see ./Dockerfile)
+#   - Platform engineering has provisioned your tenant service connection
+#     and added your project to the platform-tool-versions variable group
+# ============================================================================
+
+# Trigger on every merge to main.
+# PRs targeting main will trigger a dry-run build (see dryRun note below).
+trigger:
+  branches:
+    include:
+      - main
+
+# Pull the shared template library from the platform-templates ADO repository.
+# "platform-templates" is the repository resource alias used in the extends block.
+# The name value must match the ADO project/repository path exactly.
+resources:
+  repositories:
+    - repository: platform-templates
+      type: git
+      name: PlatformEngineering/platform-templates   # <-- update to your ADO org/project
+
+extends:
+  template: container-build-v2.yml@platform-templates
+  parameters:
+
+    # ── Required parameters ──────────────────────────────────────────────────
+
+    # tenantName: your team's platform slug.
+    # Rules: lowercase, alphanumeric, hyphens allowed, minimum 2 chars.
+    # This becomes the first path segment of your ACR repository:
+    #   <acr>/<tenantName>/<appName>:<tag>
+    tenantName: payments
+
+    # appName: the name of this specific application.
+    # Same rules as tenantName. Combined with tenantName, this uniquely
+    # identifies your image repository across the entire platform.
+    appName: payment-processor
+
+    # runtimeType: tells the pipeline which runtime validator to use.
+    # For Go, this enables the go.mod assertion and VERSION file read.
+    # Allowed values: go | python | springboot | angular | react
+    runtimeType: go
+
+    # ── Optional parameters (shown with defaults) ────────────────────────────
+
+    # dockerfilePath: path to the Dockerfile, relative to buildContext.
+    # Default is 'Dockerfile' at the buildContext root.
+    # Uncomment and change if your Dockerfile has a different name or location.
+    # dockerfilePath: Dockerfile
+
+    # buildContext: the Docker build context directory, relative to the
+    # repository root. Defaults to '.' (repository root).
+    # If your Go module root is in a subdirectory, set this to that path.
+    # The go.mod file must exist at <buildContext>/go.mod.
+    # buildContext: .
+
+    # dryRun: when true, the Sign & Attest and Publish stages are skipped.
+    # No image is pushed to ACR. The Notify stage still runs and posts a
+    # "Dry Run" summary to the PR. Useful for validating pipeline changes
+    # without side effects.
+    # Default: false
+    # dryRun: false

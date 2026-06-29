@@ -1,0 +1,58 @@
+# ============================================================================
+# Platform Container Build Pipeline v2 — Python Example
+#
+# Drop this file at the root of your Python application repository as
+# azure-pipelines.yml. Adjust tenantName and appName, then commit.
+#
+# Prerequisites:
+#   - A Dockerfile authored per the platform pattern (see ./Dockerfile)
+#   - At least one of: requirements.txt, pyproject.toml, poetry.lock
+#     (advisory check only — absent files are warned, not hard-failed)
+#   - Platform engineering has provisioned your tenant service connection
+# ============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+resources:
+  repositories:
+    - repository: platform-templates
+      type: git
+      name: PlatformEngineering/platform-templates   # <-- update to your ADO org/project
+
+extends:
+  template: container-build-v2.yml@platform-templates
+  parameters:
+
+    # ── Required parameters ──────────────────────────────────────────────────
+
+    # tenantName: your team's platform slug.
+    # Pattern: ^[a-z0-9][a-z0-9-]*[a-z0-9]$
+    # Becomes: <acr>/<tenantName>/<appName>
+    tenantName: data-platform
+
+    # appName: this application's identifier.
+    # Same pattern rules as tenantName.
+    appName: ingest-api
+
+    # runtimeType: activates the Python runtime validator.
+    # Checks for a dependency file (advisory) and extracts version from
+    # pyproject.toml or setup.cfg for optional ACR version tagging.
+    runtimeType: python
+
+    # ── Optional parameters ──────────────────────────────────────────────────
+
+    # buildContext: directory containing the Dockerfile and application source.
+    # Defaults to '.' (repository root). Set this if your Python package
+    # root is in a subdirectory.
+    # buildContext: .
+
+    # dockerfilePath: Dockerfile name/path relative to buildContext.
+    # Default: 'Dockerfile'
+    # dockerfilePath: Dockerfile
+
+    # dryRun: skips Sign & Attest and Publish when true.
+    # Useful for validating Dockerfile changes without pushing to ACR.
+    # dryRun: false

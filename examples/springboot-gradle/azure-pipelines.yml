@@ -1,0 +1,58 @@
+# ============================================================================
+# Platform Container Build Pipeline v2 — Spring Boot (Gradle) Example
+#
+# Drop this file at the root of your Spring Boot/Gradle repository as
+# azure-pipelines.yml. Adjust tenantName and appName, then commit.
+#
+# Prerequisites:
+#   - gradlew (Gradle wrapper) committed at the repository root
+#   - Dockerfile with 'AS test-export' and 'AS final' stages (see ./Dockerfile)
+#   - Platform engineering has provisioned your tenant service connection
+#
+# The pipeline runs docker build TWICE:
+#   1. --target test-export: extracts JUnit XML and publishes test results
+#      (pipeline fails here if any test fails)
+#   2. --target final: builds the production image (fast — BuildKit cache reuse)
+# ============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+resources:
+  repositories:
+    - repository: platform-templates
+      type: git
+      name: PlatformEngineering/platform-templates   # <-- update to your ADO org/project
+
+extends:
+  template: container-build-v2.yml@platform-templates
+  parameters:
+
+    # ── Required parameters ──────────────────────────────────────────────────
+
+    # tenantName: your team's platform slug.
+    # Pattern: ^[a-z0-9][a-z0-9-]*[a-z0-9]$
+    tenantName: commerce
+
+    # appName: this application's identifier.
+    appName: order-service
+
+    # runtimeType: 'springboot' covers both Gradle and Maven.
+    # The pipeline auto-detects the build tool:
+    #   - gradlew present → Gradle
+    #   - pom.xml present (no gradlew) → Maven
+    runtimeType: springboot
+
+    # ── Optional parameters ──────────────────────────────────────────────────
+
+    # buildContext: set if your project root is not the repository root.
+    # gradlew and the Dockerfile must both exist at the buildContext root.
+    # buildContext: .
+
+    # dockerfilePath: default is 'Dockerfile' at buildContext root.
+    # dockerfilePath: Dockerfile
+
+    # dryRun: skips sign/publish — useful for PR validation builds.
+    # dryRun: false

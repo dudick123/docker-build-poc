@@ -1,0 +1,58 @@
+# ============================================================================
+# Platform Container Build Pipeline v2 — Next.js SSR Example
+#
+# This example covers Next.js applications using server-side rendering,
+# React Server Components, or API routes (the 'standalone' output mode).
+#
+# For Next.js in static export mode (output: 'export'), see: ../react/
+# For plain React (Vite, CRA), see: ../react/
+#
+# Pipeline advisory warning: because 'next' is in package.json and
+# 'output: export' is NOT in next.config.js (it is 'output: standalone'),
+# the Angular/React runtime validator will emit:
+#   "Next.js app detected without 'output: export' in next.config.js."
+# This is expected for SSR apps and does NOT fail the pipeline.
+#
+# Prerequisites:
+#   - package.json with "next" in dependencies
+#   - next.config.js with 'output: standalone'
+#   - Dockerfile using --mount=type=secret for npm auth (see ./Dockerfile)
+#   - Platform engineering has provisioned your tenant service connection
+# ============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+resources:
+  repositories:
+    - repository: platform-templates
+      type: git
+      name: PlatformEngineering/platform-templates   # <-- update to your ADO org/project
+
+extends:
+  template: container-build-v2.yml@platform-templates
+  parameters:
+
+    # ── Required parameters ──────────────────────────────────────────────────
+
+    tenantName: frontend-platform
+
+    appName: storefront
+
+    # runtimeType: 'react' is correct for Next.js — there is no separate
+    # 'nextjs' runtime type. The platform template handles both static export
+    # and SSR via the same runtimeType; the distinction is in the Dockerfile.
+    runtimeType: react
+
+    # ── Optional parameters ──────────────────────────────────────────────────
+
+    # buildContext: set if your Next.js app root is in a subdirectory.
+    # buildContext: .
+
+    # dockerfilePath: default is 'Dockerfile' at buildContext root.
+    # dockerfilePath: Dockerfile
+
+    # dryRun: skips sign/publish stages.
+    # dryRun: false

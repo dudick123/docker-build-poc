@@ -1,0 +1,17 @@
+# syntax=docker/dockerfile:1
+# This Dockerfile contains a Hadolint DL3008 WARNING only (not an error):
+# apt-get install without version pinning is a warning by default.
+# Pipeline should pass with warning text in the log.
+FROM python:3.12-slim AS final
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y curl
+
+COPY . .
+
+ENV PYTHONUNBUFFERED=1
+
+USER nobody
+
+ENTRYPOINT ["python", "-m", "app"]

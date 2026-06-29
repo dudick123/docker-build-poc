@@ -1,0 +1,54 @@
+# ============================================================================
+# Platform Container Build Pipeline v2 — React (Vite / Static Export) Example
+#
+# This example covers React applications that compile to static HTML/JS/CSS:
+#   - Vite + React
+#   - Create React App
+#   - Next.js with 'output: export' (static export mode)
+#
+# For Next.js SSR (server-side rendering), see: ../react-nextjs-ssr/
+#
+# Prerequisites:
+#   - package.json at the repository root
+#   - Dockerfile using --mount=type=secret for npm auth (see ./Dockerfile)
+#   - nginx.conf for SPA routing (see ./nginx.conf)
+#   - Platform engineering has provisioned your tenant service connection
+# ============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+resources:
+  repositories:
+    - repository: platform-templates
+      type: git
+      name: PlatformEngineering/platform-templates   # <-- update to your ADO org/project
+
+extends:
+  template: container-build-v2.yml@platform-templates
+  parameters:
+
+    # ── Required parameters ──────────────────────────────────────────────────
+
+    tenantName: frontend-platform
+
+    appName: customer-portal
+
+    # runtimeType: 'react' covers Vite, CRA, and Next.js (static or SSR).
+    # The pipeline detects Next.js by checking for "next" in package.json
+    # dependencies. If Next.js is detected WITHOUT 'output: export' in
+    # next.config.js, an advisory warning is emitted (not a hard failure).
+    runtimeType: react
+
+    # ── Optional parameters ──────────────────────────────────────────────────
+
+    # buildContext: set if your React app root is in a subdirectory.
+    # buildContext: .
+
+    # dockerfilePath: default is 'Dockerfile' at buildContext root.
+    # dockerfilePath: Dockerfile
+
+    # dryRun: skips sign/publish stages.
+    # dryRun: false

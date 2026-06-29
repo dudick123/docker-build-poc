@@ -1,0 +1,49 @@
+# Negative test for parameter validation (TC-SETUP-002 through TC-SETUP-012).
+#
+# Run this pipeline manually with the parameters below to exercise individual
+# negative scenarios. Only one scenario should be active at a time (comment out
+# the others). Each run is expected to FAIL at Stage 1 validateParams.
+#
+# Scenario A: tenantName uppercase (TC-SETUP-002)
+# Scenario B: tenantName underscore (TC-SETUP-003)
+# Scenario C: tenantName single char (TC-SETUP-004)
+# Scenario D: tenantName leading hyphen (TC-SETUP-005)
+# Scenario E: tenantName trailing hyphen (TC-SETUP-006)
+# Scenario F: appName invalid (TC-SETUP-007)
+# Scenario G: both invalid (TC-SETUP-008)
+# Scenario H: runtimeType unsupported (TC-SETUP-009)
+# Scenario I: dockerfilePath missing (TC-SETUP-011)
+
+trigger: none
+
+resources:
+  repositories:
+    - repository: platform-templates
+      type: git
+      name: platform-engineering/platform-templates
+
+# --- Scenario A (TC-SETUP-002): tenantName uppercase ---
+# Expected: validateParams fails with "does not match required pattern"
+extends:
+  template: container-build-v2.yml@platform-templates
+  parameters:
+    tenantName: Platform-Test      # INVALID: uppercase
+    appName: test-app
+    runtimeType: go
+    dockerfilePath: Dockerfile
+    buildContext: fixtures/go
+    dryRun: true
+
+# --- Scenario H (TC-SETUP-009): runtimeType unsupported ---
+# Uncomment this block and comment out Scenario A to test TC-SETUP-009.
+# Expected: validateParams fails with "runtimeType 'java' is not supported"
+#
+# extends:
+#   template: container-build-v2.yml@platform-templates
+#   parameters:
+#     tenantName: platform-test
+#     appName: test-app
+#     runtimeType: java            # INVALID: not in allowlist
+#     dockerfilePath: Dockerfile
+#     buildContext: fixtures/go
+#     dryRun: true

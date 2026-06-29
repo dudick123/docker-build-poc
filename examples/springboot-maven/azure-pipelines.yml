@@ -1,0 +1,54 @@
+# ============================================================================
+# Platform Container Build Pipeline v2 — Spring Boot (Maven) Example
+#
+# Drop this file at the root of your Spring Boot/Maven repository as
+# azure-pipelines.yml. Adjust tenantName and appName, then commit.
+#
+# Prerequisites:
+#   - pom.xml at the repository root (no gradlew present — auto-detection
+#     checks gradlew first; Maven is used only when gradlew is absent)
+#   - Dockerfile with 'AS test-export' and 'AS final' stages (see ./Dockerfile)
+#   - Platform engineering has provisioned your tenant service connection
+#
+# The pipeline runs docker build TWICE:
+#   1. --target test-export: exports JUnit XML from target/surefire-reports/
+#      Pipeline fails here if any test is marked as failed.
+#   2. --target final: builds the production image (fast — BuildKit cache reuse)
+# ============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+resources:
+  repositories:
+    - repository: platform-templates
+      type: git
+      name: PlatformEngineering/platform-templates   # <-- update to your ADO org/project
+
+extends:
+  template: container-build-v2.yml@platform-templates
+  parameters:
+
+    # ── Required parameters ──────────────────────────────────────────────────
+
+    tenantName: commerce
+
+    appName: inventory-service
+
+    # runtimeType: 'springboot' covers both Gradle and Maven.
+    # Auto-detection: no gradlew → pom.xml → Maven is selected.
+    runtimeType: springboot
+
+    # ── Optional parameters ──────────────────────────────────────────────────
+
+    # buildContext: directory containing pom.xml and the Dockerfile.
+    # Default: '.' (repository root)
+    # buildContext: .
+
+    # dockerfilePath: default is 'Dockerfile' at buildContext root.
+    # dockerfilePath: Dockerfile
+
+    # dryRun: skips sign/publish stages.
+    # dryRun: false

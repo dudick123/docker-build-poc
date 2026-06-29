@@ -1,0 +1,38 @@
+# Negative test for Hadolint failures (TC-LINT-002, TC-LINT-003).
+#
+# Run manually with one scenario active at a time.
+# TC-LINT-002: Expected to FAIL at "Run Hadolint" (ADD instruction)
+# TC-LINT-003: Expected to PASS with a warning (apt-get without version pin)
+
+trigger: none
+
+resources:
+  repositories:
+    - repository: platform-templates
+      type: git
+      name: platform-engineering/platform-templates
+
+# --- TC-LINT-002: ERROR-level finding (ADD instead of COPY) ---
+# Expected: "Run Hadolint" step fails with DL3020
+extends:
+  template: container-build-v2.yml@platform-templates
+  parameters:
+    tenantName: platform-test
+    appName: test-lint-error
+    runtimeType: go
+    dockerfilePath: Dockerfile.lint-error
+    buildContext: fixtures/dockerfiles
+    dryRun: true
+
+# --- TC-LINT-003: WARNING-only (apt-get no version pin) ---
+# Uncomment to test. Expected: Hadolint passes with warning, build proceeds.
+#
+# extends:
+#   template: container-build-v2.yml@platform-templates
+#   parameters:
+#     tenantName: platform-test
+#     appName: test-lint-warn
+#     runtimeType: python
+#     dockerfilePath: Dockerfile.lint-warning-only
+#     buildContext: fixtures/dockerfiles
+#     dryRun: true

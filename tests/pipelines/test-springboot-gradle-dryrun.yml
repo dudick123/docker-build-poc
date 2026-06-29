@@ -1,0 +1,17 @@
+trigger: none
+
+resources:
+  repositories:
+    - repository: platform-templates
+      type: git
+      name: platform-engineering/platform-templates
+
+extends:
+  template: container-build-v2.yml@platform-templates
+  parameters:
+    tenantName: platform-test
+    appName: test-app-springboot-gradle
+    runtimeType: springboot
+    dockerfilePath: Dockerfile
+    buildContext: fixtures/springboot-gradle
+    dryRun: true

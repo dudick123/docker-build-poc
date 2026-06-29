@@ -1,0 +1,57 @@
+# ============================================================================
+# Platform Container Build Pipeline v2 — Angular Example
+#
+# Drop this file at the root of your Angular application repository as
+# azure-pipelines.yml. Adjust tenantName and appName, then commit.
+#
+# Prerequisites:
+#   - package.json at the repository root (advisory check — absent produces
+#     a warning, not a failure)
+#   - 'ng' referenced in package.json scripts (advisory check)
+#   - Dockerfile using --mount=type=secret for npm auth (see ./Dockerfile)
+#   - nginx.conf for Angular HTML5 routing (see ./nginx.conf)
+#   - Platform engineering has provisioned your tenant service connection
+#
+# npm credentials: the platform injects two values into every docker build:
+#   --build-arg NPM_REGISTRY=<azure-artifacts-url>
+#   --secret id=npm_token,env=SYSTEM_ACCESSTOKEN
+# Your Dockerfile must consume these — see the reference Dockerfile.
+# ============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+resources:
+  repositories:
+    - repository: platform-templates
+      type: git
+      name: PlatformEngineering/platform-templates   # <-- update to your ADO org/project
+
+extends:
+  template: container-build-v2.yml@platform-templates
+  parameters:
+
+    # ── Required parameters ──────────────────────────────────────────────────
+
+    tenantName: frontend-platform
+
+    appName: admin-portal
+
+    # runtimeType: activates the Angular runtime validator.
+    # Checks for package.json and 'ng' in scripts (advisory).
+    # Extracts version from package.json "version" field for ACR tagging.
+    runtimeType: angular
+
+    # ── Optional parameters ──────────────────────────────────────────────────
+
+    # buildContext: set if your Angular workspace is in a subdirectory.
+    # package.json and the Dockerfile must exist at the buildContext root.
+    # buildContext: .
+
+    # dockerfilePath: default is 'Dockerfile' at buildContext root.
+    # dockerfilePath: Dockerfile
+
+    # dryRun: skips sign/publish stages.
+    # dryRun: false
